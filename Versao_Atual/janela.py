@@ -1,4 +1,5 @@
-''' A parte Gráfica será dividida em 3 Frames, lado a lado e 2 Menus:
+''' A parte Gráfica será dividida em 3 Frames, lado a lado
+    e 2 Menus:
 
     FRAMES 
     - Primeiro Frame:
@@ -39,14 +40,19 @@ from PIL import Image, ImageTk
 import pygame
 from tkinter import filedialog
 import time
-from librosa import get_duration
+import librosa
 import tkinter.ttk as ttk
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import tkinter as tk
+from tkinter import messagebox
+import tkinter.filedialog as filedialog
+from PIL import ImageTk, Image
+import subprocess
+import os
 
-#caminho_inicial = "C:/Users/DELL/Music/"
-caminho_imagens = "C:/Users/DELL/Documents/CCP/Prog_Micro/ProjetoFinal/Imagens/"
+caminho_imagens = "Imagens/"
 
 global pausada 
 pausada = False
@@ -63,6 +69,9 @@ parou = False
 # os timers recorrentes das músicas ficarão nesta variável
 global after_id
 after_id = None
+
+global file_path
+file_path = None
 
 # dicionario_musicas: {"caminho": str, "nome": str, "tipo": str}
 dicionario_musicas = {}
@@ -237,12 +246,47 @@ def reseta_textos():
 def altera_musica_tocando(arquivo):
     global duracao_musica_tocando
     global nome_musica_tocando
+    #print(arquivo)
 
-    duracao_musica_tocando = get_duration(path=arquivo)
+    duracao_musica_tocando = librosa.get_duration(filename=arquivo)
     texto_musica_tocando.config(text=f'Música tocando: {nome_musica_tocando}')
 
-def desenha_grafico():
-    pass
+# Função que desenha as barras dos níveis de energia de cada integrante da banda.
+# Recebe como parâmteros 4 números de 0 a 200 para representar a energia
+def desenha_niveis_energia(vocalista, baterista, baixista, pianista):
+    canvas_vocalista.config(width=vocalista)
+    canvas_baterista.config(width=baterista)
+    canvas_baixista.config(width=baixista)
+    canvas_pianista.config(width=pianista)
+
+# Função que seta a Label de Status das Batidas para SIM
+def exibe_status_batidas_sim():
+    label_status_batida.config(text="SIM", fg='green')
+
+# Função que seta a Label de Status das Batidas para NÃO
+def exibe_status_batidas_nao():
+    label_status_batida.config(text="NÃO", fg='red')
+
+
+''' Funções para separação do arquivo '''
+
+def separate_audio(file_path):
+    file_name = os.path.basename(file_path)
+    output_dir = "output"
+    messagebox.showinfo("Mensagem","Fazendo a separação de faixas, por favor aguarde.")
+    cmd = f"spleeter separate -p spleeter:5stems -o {output_dir} {file_name}"
+    print(cmd)
+    subprocess.run(cmd, shell=True)
+    messagebox.showinfo("Mensagem", "Separação de faixas concluída!")
+
+def choose_file():
+    global file_path
+    file_path = filedialog.askopenfilename(filetypes= [("Arquivos MP3","*.mp3")])
+
+def separate_file():
+    file_path = filedialog.askopenfilename(filetypes=[("Arquivos MP3", "*.mp3")])
+    separate_audio(file_path)
+
 
 
 ''' Função de Comando do Slider de Posição da Música '''
@@ -420,26 +464,61 @@ def anterior():
 
 
 ''' Primeiro Frame '''
-frame1 = Frame(root, bg="black", width=200, height=400)
+frame1 = Frame(root, bg="black")
 frame1.pack(side=LEFT, fill=BOTH, expand=True)
 
 frame1_label_titulo = Label(frame1, text="OUTPUT", fg="white", bg="black", font=("Helvetica", 16))
-frame1_label_titulo.pack(pady=5)
+frame1_label_titulo.pack(side=TOP, pady=5)
 
-# Create a FigureCanvasTkAgg object and associate it with the frame1
-canvas = desenha_grafico()
-canvas.draw()
-canvas.get_tk_widget().pack()
+# Criar os Frames, as Labels e os Canvas de Níveis de Energia
+frame1_nivel_energia = Frame(frame1, bg="black")
+frame1_nivel_energia.pack(side=TOP, fill=BOTH, pady=5)
 
-# Create three description labels
-label1 = Label(frame1, text="Integrante da Banda", fg="white", bg="black", font=("Helvetica", 12))
-label1.pack(pady=2)
+# Vocalista
+frame1_nivel_energia_vocalista = Frame(frame1_nivel_energia, bg="white")
+frame1_nivel_energia_vocalista.pack(side=TOP, fill=BOTH, padx=5, pady=8)
+label = tk.Label(frame1_nivel_energia_vocalista, text="Vocalista", width=7, font='Helvetica 10 bold')
+label.pack(side=LEFT)
+canvas_vocalista = Canvas(frame1_nivel_energia_vocalista, width=100, height=30, bg="purple")
+canvas_vocalista.pack(side=LEFT)
 
-label2 = Label(frame1, text="Batidas", fg="white", bg="black", font=("Helvetica", 12))
-label2.pack(pady=2)
+# Baterista
+frame1_nivel_energia_baterista = Frame(frame1_nivel_energia, bg="white")
+frame1_nivel_energia_baterista.pack(side=tk.TOP, fill=tk.BOTH, padx=5, pady=8)
+label = tk.Label(frame1_nivel_energia_baterista, text="Baterista", width=7, font='Helvetica 10 bold')
+label.pack(side=LEFT)
+canvas_baterista = Canvas(frame1_nivel_energia_baterista, width=100, height=30, bg="green")
+canvas_baterista.pack(side=LEFT)
 
-label3 = Label(frame1, text="Instrumento", fg="white", bg="black", font=("Helvetica", 12))
-label3.pack(pady=2)
+# Baixista
+frame1_nivel_energia_baixista = Frame(frame1_nivel_energia, bg="white")
+frame1_nivel_energia_baixista.pack(side=TOP, fill=BOTH, padx=5, pady=8)
+label = tk.Label(frame1_nivel_energia_baixista, text="Baixista", width=7, font='Helvetica 10 bold')
+label.pack(side=LEFT)
+canvas_baixista = tk.Canvas(frame1_nivel_energia_baixista, width=100, height=30, bg="blue")
+canvas_baixista.pack(side=LEFT)
+
+# Pianista
+frame1_nivel_energia_pianista = Frame(frame1_nivel_energia, bg="white")
+frame1_nivel_energia_pianista.pack(side=TOP, fill=BOTH, padx=5, pady=8)
+label = tk.Label(frame1_nivel_energia_pianista, text="Pianista", width=7, font='Helvetica 10 bold')
+label.pack(side=LEFT)
+canvas_pianista = tk.Canvas(frame1_nivel_energia_pianista, width=100, height=30, bg="orange")
+canvas_pianista.pack(side=LEFT)
+
+# Desenha as barras segundo as energias enviadas como parâmetro
+desenha_niveis_energia(180, 10, 100, 120)
+
+# Label que representa as Batidas da Música
+frame1_batidas = Frame(frame1, bg="white", width=100, height=40)
+frame1_batidas.pack(side=TOP, fill=BOTH, padx=5, pady=15)
+
+label_batidas = Label(frame1_batidas, text="BATIDA", width=7, font='Helvetica 10 bold')
+label_batidas.pack(side=LEFT)
+label_status_batida = Label(frame1_batidas, text="")
+label_status_batida.pack(side=LEFT)
+
+exibe_status_batidas_sim()
 
 
 
@@ -451,7 +530,7 @@ frame2_label_titulo = Label(frame2, text="CAIXA DE MÚSICA", fg="white", bg="bla
 frame2_label_titulo.pack(pady=5)
 
 frame2_cima = Frame(frame2, bg="black")
-frame2_cima.pack(side=TOP, fill=BOTH, expand=True, pady=5)
+frame2_cima.pack(side=TOP, fill=BOTH, pady=5)
 
 frame2_baixo = Frame(frame2, bg="black")
 frame2_baixo.pack(side=TOP, fill=BOTH, expand=True)
@@ -470,7 +549,7 @@ barra_status.pack()
 
 # Criação imagens e definição dos comandos dos Botões do Player
 frame2_baixo_botoes = Frame(frame2_baixo, bg="black")
-frame2_baixo_botoes.pack(side=TOP, expand=True, pady=5)
+frame2_baixo_botoes.pack(side=TOP, pady=5)
 
 img_bt_anterior = redimensiona_imagem('botao_anterior.jpg', 30)
 img_bt_proxima = redimensiona_imagem('botao_proxima.jpg', 30)
@@ -496,6 +575,10 @@ frame2_baixo_tocando.pack(side=TOP, fill=BOTH, expand=True)
 
 texto_musica_tocando = Label(frame2_baixo_tocando, text="Música tocando:", bd=1, relief=GROOVE, anchor=W)
 texto_musica_tocando.pack(pady=10)
+
+###### adicionando o botão de separação ##########
+botao_separador = tk.Button(frame2_baixo, text = "Separar o áudio", command=separate_file)
+botao_separador.pack(pady = 10)
 
 
 
