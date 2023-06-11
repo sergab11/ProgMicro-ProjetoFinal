@@ -12,11 +12,11 @@ pygame.init()
 
 global file_path
 file_path = None
-playButtonImg = Image.open("playbutton.png")
+playButtonImg = Image.open("Imagens/botao_play.jpg")
 playButtonImg = playButtonImg.resize((50, 50), Image.ANTIALIAS) 
 playButtonImg = ImageTk.PhotoImage(playButtonImg)
 
-pauseButtonImg = Image.open("pausebutton.png")
+pauseButtonImg = Image.open("Imagens/botao_pause.jpg")
 pauseButtonImg = pauseButtonImg.resize((50, 50), Image.ANTIALIAS) 
 pauseButtonImg = ImageTk.PhotoImage(pauseButtonImg)
 
