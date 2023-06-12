@@ -45,7 +45,7 @@ def separate_audio(file_path):
     file_name = os.path.basename(file_path)
     output_dir = "output"
     messagebox.showinfo("Mensagem","Fazendo a separação de faixas, por favor aguarde.")
-    cmd = f"spleeter separate -p spleeter:5stems -o {output_dir} {file_name}"
+    cmd = f"spleeter separate -i {file_name} -p spleeter:5stems -o {output_dir} "
     print(cmd)
     subprocess.run(cmd, shell=True)
     messagebox.showinfo("Mensagem", "Separação de faixas concluída!")
