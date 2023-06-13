@@ -55,14 +55,13 @@ caminho_imagens = "Imagens/"
 global pausada 
 pausada = False
 
-global duracao_musica_tocando, nome_musica_tocando, arquivo_musica_tocando
+global duracao_musica_tocando, nome_musica_tocando, arquivo_musica_tocando, posicao_atual
 duracao_musica_tocando = 0
 nome_musica_tocando = ""
 arquivo_musica_tocando = ""
 
-global taxa_amostragem, media_energia_musica
-taxa_amostragem = 0
-media_energia_musica = np.zeros(1)
+global energia_maxima_musica
+energia_maxima_musica = np.zeros(1)
 
 global y, sr
 y = 0
@@ -85,13 +84,15 @@ dicionario_musicas = {}
 global tempo_atual
 tempo_atual = 0
 
+global beat_time_filtrado
+beat_time_filtrado = 0
+
 root = Tk()
 root.title('Micro B5')
 root.geometry("900x400")
 
 '''Inicializando Pygame Mixer'''
 pygame.mixer.init()
-taxa_amostragem = pygame.mixer.get_init()[0]
 
 
 ''' Funções do Menu de Adição de Músicas '''
@@ -237,13 +238,19 @@ def atualiza_posicao_atual_musica():
         
         proximo_segundo = int(slider_posicao.get()) + 1
         slider_posicao.config(value=proximo_segundo)
-    global tempo_atual
-    tempo_atual = slider_posicao.get()
-    calcula_e_desenha_nivel_energia()
+
     play_audio_with_beats()
 
     # timer recorrente do TkInter
     musicas_after_id = barra_status.after(1000, atualiza_posicao_atual_musica)
+
+# Função que atualiza as barras com os Níveis de Energia a cada 50 milissegundos
+def atualiza_barras_nivel_energia():
+    global energias_after_id
+    
+    calcula_e_desenha_nivel_energia()
+    energias_after_id = frame1_nivel_energia.after(50, atualiza_barras_nivel_energia)
+
 
 # Função que reseta a Barra de Status e o Slider
 def reseta_textos():
@@ -258,20 +265,27 @@ def reseta_textos():
     label_status_batida.config(text='')
     label_energia_numerico.config(text='')
 
+# Função que reseta os timers gerados pelo método after
+def reseta_timers():
+    global musicas_after_id, energias_after_id
+
+    barra_status.after_cancel(musicas_after_id)
+    frame1_nivel_energia.after_cancel(energias_after_id)
+    musicas_after_id = None
+    energias_after_id = None
 
  # carrega, obtem o tamanho e formata a música com Librosa
 def altera_musica_tocando(arquivo):
-    global duracao_musica_tocando, nome_musica_tocando, arquivo_musica_tocando, taxa_amostragem, y, sr, media_energia_musica
+    global duracao_musica_tocando, nome_musica_tocando, arquivo_musica_tocando, taxa_amostragem, y, sr
 
     duracao_musica_tocando = librosa.get_duration(filename=arquivo)
     texto_musica_tocando.config(text=f'Música tocando: {nome_musica_tocando}')
     arquivo_musica_tocando = librosa.load(arquivo)
     
     # Load the audio file with librosa
-    y, sr = librosa.load(arquivo, sr=taxa_amostragem)
-    calcula_energia_media_musica()
+    y, sr = librosa.load(arquivo)
+    calcula_energia_maxima_musica()
     generate_beatTime()
-    
 
 # Função que desenha as barras dos níveis de energia de cada integrante da banda.
 # Recebe como parâmteros 4 números de 0 a 200 para representar a energia
@@ -294,10 +308,12 @@ def desenha_niveis_energia(vocalista, baterista, baixista, pianista):
     canvas_baixista.config(width=baixista)
     canvas_pianista.config(width=pianista)
 
-def calcula_energia_media_musica():
-    global media_energia_musica, y, sr
+def calcula_energia_maxima_musica():
+    global energia_maxima_musica, y, sr
 
-    window_size = sr  # 1 second window size
+    #window_size = sr  # 1 second window size
+    window_size = int(sr*0.05)  # 0.05 second window size
+
     num_windows = len(y) // window_size
     energy_values = []
 
@@ -309,24 +325,28 @@ def calcula_energia_media_musica():
         energy_values.append(energy)
 
     # Calcula a média das energias da música
-    media_energia_musica = np.mean(energy_values)
+    energia_maxima_musica = np.max(energy_values)
 
 # Calcula nível de energia da música corrente
 def calcula_e_desenha_nivel_energia():
-    global taxa_amostragem, media_energia_musica, y, sr
+    global energia_maxima_musica, y, sr, energias_after_id
 
     posicao_atual = pygame.mixer.music.get_pos()/1000
-    if posicao_atual == len(y):
+    if posicao_atual >= len(y):
+        frame1_nivel_energia.after_cancel(energias_after_id)
         return
-
-    y_window = y[int(posicao_atual * sr):int((posicao_atual + 1) * sr)]
+    
+    comeco = int(posicao_atual * sr)
+    fim = int((posicao_atual + 0.05) * sr)
+    y_window = y[comeco:fim]
+    #y_window = y[int(posicao_atual * sr):int((posicao_atual + 1) * sr)]
 
     energy = np.sum(y_window ** 2)
 
     if energy < 0.001:
          energy = 0
     
-    barra_energia = int(100*energy/media_energia_musica)
+    barra_energia = int(200*energy/energia_maxima_musica)
     desenha_niveis_energia(barra_energia, 0, 0, 0)
 
     label_energia_numerico.config(text=f"{int(energy)}")
@@ -370,7 +390,7 @@ def separate_file():
 
 ''' Função de Comando do Slider de Posição da Música '''
 def deslizar_posicao(x):
-    global nome_musica_tocando, arquivo_musica_tocando, taxa_amostragem
+    global nome_musica_tocando, arquivo_musica_tocando
     arquivo_musica_tocando = lista_nome_e_retorna_arq(nome_musica_tocando)
     if arquivo_musica_tocando == "0":
         print("Música não encontrada")
@@ -389,7 +409,7 @@ def deslizar_volume(x):
 ''' Funções de Comando dos Botões '''
 # toca música selecionada na Caixa de Música
 def tocar():
-    global parou, pausada, nome_musica_tocando, musicas_after_id, taxa_amostragem
+    global parou, pausada, nome_musica_tocando, musicas_after_id, energias_after_id
 
     parou = False
     pausada = False
@@ -400,8 +420,7 @@ def tocar():
 
     nova_musica_selecionada = caixa_musica.get(ACTIVE)
     if nome_musica_tocando != "":
-        barra_status.after_cancel(musicas_after_id)
-        musicas_after_id = None
+        reseta_timers()
         reseta_textos()
         nome_musica_tocando = nova_musica_selecionada
     else:
@@ -413,6 +432,7 @@ def tocar():
 
     altera_musica_tocando(arquivo_musica)
     atualiza_posicao_atual_musica()
+    atualiza_barras_nivel_energia()
     
     pygame.mixer.music.load(arquivo_musica)
     pygame.mixer.music.play(loops=0)
@@ -427,6 +447,7 @@ def parar():
         return
     
     reseta_textos()
+    reseta_timers()
 
     pygame.mixer.music.stop()
     # tira o selecionado da música que estava selecionada
@@ -458,12 +479,13 @@ def pausar():
 
 # toca a próxima música da Playlist da Caixa de Música
 def proxima():
-    global pausada, parou, nome_musica_tocando, taxa_amostragem
+    global pausada, parou, nome_musica_tocando
     if parou:
         parou = False
     if pausada:
         pausada = False
 
+    reseta_timers()
     reseta_textos()
 
     if not dicionario_musicas:
@@ -485,6 +507,9 @@ def proxima():
     arquivo_musica = lista_nome_e_retorna_arq(nome_musica_tocando)
 
     altera_musica_tocando(arquivo_musica)
+    atualiza_posicao_atual_musica()
+    atualiza_barras_nivel_energia()
+
     pygame.mixer.music.load(arquivo_musica)
     pygame.mixer.music.play(loops=0)
 
@@ -495,12 +520,13 @@ def proxima():
 
 # toca a música anterior à música corrente da Playlist
 def anterior():
-    global parou, pausada, nome_musica_tocando, taxa_amostragem
+    global parou, pausada, nome_musica_tocando
     if parou:
         parou = False
     if pausada:
         pausada = False
 
+    reseta_timers()
     reseta_textos()
 
     if not dicionario_musicas:
@@ -523,10 +549,13 @@ def anterior():
     # carrega e toca a música anterior
     nome_musica_tocando = caixa_musica.get(musica_anterior)
     arquivo_musica = lista_nome_e_retorna_arq(nome_musica_tocando)
-    pygame.mixer.music.load(arquivo_musica)
-    pygame.mixer.music.play(loops=0)
 
     altera_musica_tocando(arquivo_musica)
+    atualiza_posicao_atual_musica()
+    atualiza_barras_nivel_energia()
+
+    pygame.mixer.music.load(arquivo_musica)
+    pygame.mixer.music.play(loops=0)
 
     # move a barra da música anterior para a atual
     caixa_musica.selection_clear(0, END)
