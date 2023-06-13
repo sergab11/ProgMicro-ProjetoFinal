@@ -82,6 +82,9 @@ energias_after_id = None
 # dicionario_musicas: {"caminho": str, "nome": str, "tipo": str}
 dicionario_musicas = {}
 
+global tempo_atual
+tempo_atual = 0
+
 root = Tk()
 root.title('Micro B5')
 root.geometry("900x400")
@@ -234,8 +237,10 @@ def atualiza_posicao_atual_musica():
         
         proximo_segundo = int(slider_posicao.get()) + 1
         slider_posicao.config(value=proximo_segundo)
-
+    global tempo_atual
+    tempo_atual = slider_posicao.get()
     calcula_e_desenha_nivel_energia()
+    play_audio_with_beats()
 
     # timer recorrente do TkInter
     musicas_after_id = barra_status.after(1000, atualiza_posicao_atual_musica)
@@ -265,6 +270,8 @@ def altera_musica_tocando(arquivo):
     # Load the audio file with librosa
     y, sr = librosa.load(arquivo, sr=taxa_amostragem)
     calcula_energia_media_musica()
+    generate_beatTime()
+    
 
 # Função que desenha as barras dos níveis de energia de cada integrante da banda.
 # Recebe como parâmteros 4 números de 0 a 200 para representar a energia
@@ -526,6 +533,29 @@ def anterior():
     caixa_musica.activate(musica_anterior)
     caixa_musica.selection_set(musica_anterior, last=None)
 
+# Caculo do tempo das batidas
+def generate_beatTime():
+    global y, sr
+    tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
+    global beat_times
+    beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+    global beat_time_filtrado, tempo_atual
+    beat_time_filtrado = [time for time in beat_times if time >= tempo_atual]
+
+
+def play_audio_with_beats():
+    global beat_time_filtrado, tempo_atual
+
+    for beat_time in beat_time_filtrado:
+        if tempo_atual > beat_time:
+            #print("Tempo: " + str(tempo_atual) + " Beat_time: " + str(beat_time))
+            print("batida")
+            break
+        else:
+            break
+
+    beat_time_filtrado = [time for time in beat_times if time >= tempo_atual]
+    #print("Arrastou depois: " + beat_time_filtrado)
 
 
 ''' Primeiro Frame '''
