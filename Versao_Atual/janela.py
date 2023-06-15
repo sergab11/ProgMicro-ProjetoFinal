@@ -43,7 +43,6 @@ import time
 import librosa
 import tkinter.ttk as ttk
 import tkinter as tk
-from tkinter import messagebox
 import tkinter.filedialog as filedialog
 from PIL import ImageTk, Image
 import subprocess
@@ -51,21 +50,41 @@ import os
 import numpy as np
 
 caminho_imagens = "Imagens/"
+caminho_musicas = "Musicas/"
 
 global pausada 
 pausada = False
 
-global duracao_musica_tocando, nome_musica_tocando, arquivo_musica_tocando, posicao_atual
+global duracao_musica_tocando, nome_musica_tocando, arquivo_musica_tocando
 duracao_musica_tocando = 0
 nome_musica_tocando = ""
 arquivo_musica_tocando = ""
 
-global energia_maxima_musica
-energia_maxima_musica = np.zeros(1)
+global energia_maxima_baixo, energia_maxima_bateria, energia_maxima_piano, energia_maxima_vocal, energia_maxima_outro
+energia_maxima_baixo = np.zeros(1)
+energia_maxima_bateria = np.zeros(1)
+energia_maxima_piano = np.zeros(1)
+energia_maxima_vocal = np.zeros(1)
+energia_maxima_outro = np.zeros(1)
 
-global y, sr
-y = 0
-sr = 0
+global y_musica, sr_musica, y_vocal, sr_vocal, y_bateria, sr_bateria, y_baixo, sr_baixo, y_piano, sr_piano, y_outro, sr_outro
+y_musica = 0
+sr_musica = 0
+
+y_vocal = 0
+sr_vocal = 0
+
+y_bateria = 0
+sr_bateria = 0
+
+y_baixo = 0
+sr_baixo = 0
+
+y_piano = 0
+sr_piano = 0
+
+y_outro = 0
+sr_outro = 0
 
 global parou
 parou = False
@@ -248,7 +267,7 @@ def atualiza_posicao_atual_musica():
 def atualiza_barras_nivel_energia():
     global energias_after_id
     
-    calcula_e_desenha_nivel_energia()
+    desenha_nivel_energia_integrantes()
     energias_after_id = frame1_nivel_energia.after(50, atualiza_barras_nivel_energia)
 
 
@@ -261,9 +280,8 @@ def reseta_textos():
     barra_status.config(text='')
     slider_posicao.config(value=0)
     texto_musica_tocando.config(text='')
-    desenha_niveis_energia(0, 0, 0, 0)
+    desenha_niveis_energia(0, 0, 0, 0, 0)
     label_status_batida.config(text='')
-    label_energia_numerico.config(text='')
 
 # Função que reseta os timers gerados pelo método after
 def reseta_timers():
@@ -274,22 +292,63 @@ def reseta_timers():
     musicas_after_id = None
     energias_after_id = None
 
+# Função que reseta as variáveis de taxa de amostragem, frames e energia máxima dos integrantes da banda
+def reseta_variaveis_musica():
+    global energia_maxima_baixo, energia_maxima_bateria, energia_maxima_piano, energia_maxima_vocal, energia_maxima_outro
+    global y_musica, sr_musica, y_vocal, sr_vocal, y_bateria, sr_bateria, y_baixo, sr_baixo, y_piano, sr_piano, y_outro, sr_outro
+    
+    energia_maxima_baixo = np.zeros(1)
+    energia_maxima_bateria = np.zeros(1)
+    energia_maxima_piano = np.zeros(1)
+    energia_maxima_vocal = np.zeros(1)
+    energia_maxima_outro = np.zeros(1)
+
+    y_vocal = 0
+    sr_vocal = 0
+    y_bateria = 0
+    sr_bateria = 0
+    y_baixo = 0
+    sr_baixo = 0
+    y_piano = 0
+    sr_piano = 0
+    y_outro = 0
+    sr_outro = 0
+
  # carrega, obtem o tamanho e formata a música com Librosa
 def altera_musica_tocando(arquivo):
-    global duracao_musica_tocando, nome_musica_tocando, arquivo_musica_tocando, taxa_amostragem, y, sr
+    global duracao_musica_tocando, nome_musica_tocando, arquivo_musica_tocando
+    global y_baixo, sr_baixo, y_bateria, sr_bateria, y_piano, sr_piano, y_vocal, sr_vocal, y_musica, sr_musica, y_outro, sr_outro
 
     duracao_musica_tocando = librosa.get_duration(filename=arquivo)
     texto_musica_tocando.config(text=f'Música tocando: {nome_musica_tocando}')
     arquivo_musica_tocando = librosa.load(arquivo)
+
+    caminho = caminho_musicas+nome_musica_tocando+"/vocals.wav"
+    y_vocal, sr_vocal = librosa.load(caminho)
+
+    caminho = caminho_musicas+nome_musica_tocando+"/drums.wav"
+    y_bateria, sr_bateria = librosa.load(caminho)
+
+    caminho = caminho_musicas+nome_musica_tocando+"/bass.wav"
+    y_baixo, sr_baixo = librosa.load(caminho)
+
+    caminho = caminho_musicas+nome_musica_tocando+"/piano.wav"
+    y_piano, sr_piano = librosa.load(caminho)
+
+    caminho = caminho_musicas+nome_musica_tocando+"/other.wav"
+    y_outro, sr_outro = librosa.load(caminho)
+
+    for elem in ["baixo", "bateria", "piano", "vocal", "outro"]:
+        calcula_energia_maxima_integrante(elem)
     
     # Load the audio file with librosa
-    y, sr = librosa.load(arquivo)
-    calcula_energia_maxima_musica()
+    y_musica, sr_musica = librosa.load(arquivo)
+
     generate_beatTime()
 
 # Função que desenha as barras dos níveis de energia de cada integrante da banda.
 # Recebe como parâmteros 4 números de 0 a 200 para representar a energia
-def desenha_niveis_energia(vocalista, baterista, baixista, pianista):
+def desenha_niveis_energia(baixista, baterista, pianista, vocalista, outro):
     if vocalista < 0 or baterista < 0 or baixista < 0 or pianista < 0:
         print("Algum valor está fora do intervalo [0, 200]!")
         return
@@ -302,16 +361,34 @@ def desenha_niveis_energia(vocalista, baterista, baixista, pianista):
         pianista = 200
     if baixista > 200:
         baixista = 200
+    if outro > 200:
+        outro = 200
 
     canvas_vocalista.config(width=vocalista)
     canvas_baterista.config(width=baterista)
     canvas_baixista.config(width=baixista)
     canvas_pianista.config(width=pianista)
+    canvas_outro.config(width=outro)
 
-def calcula_energia_maxima_musica():
-    global energia_maxima_musica, y, sr
+# Calcula nível de energia máxima do Integrante da Banda passado como "tipo"
+def calcula_energia_maxima_integrante(tipo):
+    global y_baixo, sr_baixo, y_bateria, sr_bateria, y_piano, sr_piano, y_vocal, sr_vocal, y_outro, sr_outro
+    global energia_maxima_baixo, energia_maxima_bateria, energia_maxima_piano, energia_maxima_vocal, energia_maxima_outro
 
-    #window_size = sr  # 1 second window size
+    y = 0
+    sr = 0
+
+    if tipo == "baixo":
+        y, sr = y_baixo, sr_baixo
+    elif tipo == "bateria":
+        y, sr = y_bateria, sr_bateria
+    elif tipo == "piano":
+        y, sr = y_piano, sr_piano
+    elif tipo == "vocal":
+        y, sr = y_vocal, sr_vocal
+    elif tipo == "outro":
+        y, sr = y_outro, sr_outro
+
     window_size = int(sr*0.05)  # 0.05 second window size
 
     num_windows = len(y) // window_size
@@ -324,32 +401,74 @@ def calcula_energia_maxima_musica():
         energy = np.sum(y_window ** 2)
         energy_values.append(energy)
 
-    # Calcula a média das energias da música
-    energia_maxima_musica = np.max(energy_values)
+    if tipo == "baixo":
+        energia_maxima_baixo = np.max(energy_values)
+    elif tipo == "bateria":
+        energia_maxima_bateria = np.max(energy_values)
+    elif tipo == "piano":
+        energia_maxima_piano = np.max(energy_values)
+    elif tipo == "vocal":
+        energia_maxima_vocal = np.max(energy_values)
+    elif tipo == "outro":
+        energia_maxima_outro = np.max(energy_values)
 
-# Calcula nível de energia da música corrente
-def calcula_e_desenha_nivel_energia():
-    global energia_maxima_musica, y, sr, energias_after_id
+# Calcula nível de energia do integrante da Banda passado como "tipo" em uma "posição" da música
+def calcula_nivel_energia_integrante(tipo, posicao):
+    global y_baixo, sr_baixo, y_bateria, sr_bateria, y_piano, sr_baixo, y_vocal, sr_vocal, y_outro, sr_outro
+    global energia_maxima_baixo, energia_maxima_bateria, energia_maxima_piano, energia_maxima_vocal, energia_maxima_outro
+    barra_energia = 0
+    energia = 0
+    y = 0
+    sr = 0
+
+    if tipo == "baixo":
+        y, sr = y_baixo, sr_baixo
+    elif tipo == "bateria":
+        y, sr = y_bateria, sr_bateria
+    elif tipo == "piano":
+        y, sr = y_piano, sr_piano
+    elif tipo == "vocal":
+        y, sr = y_vocal, sr_vocal
+    elif tipo == "outro":
+        y, sr = y_outro, sr_outro
+
+    comeco = int(posicao * sr)
+    fim = int((posicao + 0.05) * sr)
+    janela = y[comeco:fim]
+
+    energia = np.sum(janela ** 2)
+
+    if energia < 0.001:
+         energia = 0
+    
+    if tipo == "baixo":
+        barra_energia = int(200*energia/energia_maxima_baixo)
+    elif tipo == "bateria":
+        barra_energia = int(200*energia/energia_maxima_bateria)
+    elif tipo == "piano":
+        barra_energia = int(200*energia/energia_maxima_piano)
+    elif tipo == "vocal":
+        barra_energia = int(200*energia/energia_maxima_vocal)
+    elif tipo == "outro":
+        barra_energia = int(200*energia/energia_maxima_outro)
+
+    return barra_energia 
+
+# Desenha nível de energia dos integrantes da Banda
+def desenha_nivel_energia_integrantes():
+    global energias_after_id, duracao_musica_tocando
+
+    barras_energia = []
 
     posicao_atual = pygame.mixer.music.get_pos()/1000
-    if posicao_atual >= len(y):
+    if posicao_atual == int(duracao_musica_tocando):
         frame1_nivel_energia.after_cancel(energias_after_id)
         return
     
-    comeco = int(posicao_atual * sr)
-    fim = int((posicao_atual + 0.05) * sr)
-    y_window = y[comeco:fim]
-    #y_window = y[int(posicao_atual * sr):int((posicao_atual + 1) * sr)]
+    for elem in ["baixo", "bateria", "piano", "vocal", "outro"]:
+        barras_energia.append(calcula_nivel_energia_integrante(elem, posicao_atual))
 
-    energy = np.sum(y_window ** 2)
-
-    if energy < 0.001:
-         energy = 0
-    
-    barra_energia = int(200*energy/energia_maxima_musica)
-    desenha_niveis_energia(barra_energia, 0, 0, 0)
-
-    label_energia_numerico.config(text=f"{int(energy)}")
+    desenha_niveis_energia(barras_energia[0], barras_energia[1], barras_energia[2], barras_energia[3], barras_energia[4])
 
 
 # Função que seta a Label de Status das Batidas para SIM
@@ -361,31 +480,12 @@ def exibe_status_batidas_nao():
     label_status_batida.config(text="NÃO", fg='red')
 
 
-''' Funções para separação do arquivo '''
+''' Função para separação do arquivo '''
 
 def separate_audio(arquivo):
-    global nome_musica_tocando
-
-    output_dir = "output"
-    messagebox.showinfo("Mensagem","Fazendo a separação de faixas, por favor aguarde.")
-    texto_musica_tocando.config(text=f"Separando a música {nome_musica_tocando} em 5 faixas...")
+    output_dir = "Musicas"
     cmd = f"spleeter separate -p spleeter:5stems -o {output_dir} {arquivo}"
-    print(cmd)
     subprocess.run(cmd, shell=True)
-    messagebox.showinfo("Mensagem", "Separação de faixas concluída!")
-    tocar()
-
-def separate_file():
-    global nome_musica_tocando
-    if not dicionario_musicas:
-        print("Dicionário vazio...")
-        return
-    parar()
-
-    nome_musica_tocando = caixa_musica.get(ACTIVE)
-    arquivo = lista_nome_e_retorna_arq(nome_musica_tocando)
-    separate_audio(arquivo)
-
 
 
 ''' Função de Comando do Slider de Posição da Música '''
@@ -409,7 +509,7 @@ def deslizar_volume(x):
 ''' Funções de Comando dos Botões '''
 # toca música selecionada na Caixa de Música
 def tocar():
-    global parou, pausada, nome_musica_tocando, musicas_after_id, energias_after_id
+    global parou, pausada, nome_musica_tocando, musicas_after_id, energias_after_id, caminho_musicas
 
     parou = False
     pausada = False
@@ -422,6 +522,7 @@ def tocar():
     if nome_musica_tocando != "":
         reseta_timers()
         reseta_textos()
+        reseta_variaveis_musica()
         nome_musica_tocando = nova_musica_selecionada
     else:
         nome_musica_tocando = caixa_musica.get(ACTIVE)
@@ -429,6 +530,15 @@ def tocar():
     arquivo_musica = lista_nome_e_retorna_arq(nome_musica_tocando)
     if arquivo_musica == "0":
         print("Música não encontrada")
+
+    caminho = caminho_musicas+nome_musica_tocando
+    if not os.path.isdir(caminho):
+        if musicas_after_id != None and energias_after_id != None:
+            reseta_timers()
+        separate_audio(arquivo_musica)
+        reseta_textos()
+        reseta_variaveis_musica()
+        nome_musica_tocando = nova_musica_selecionada
 
     altera_musica_tocando(arquivo_musica)
     atualiza_posicao_atual_musica()
@@ -440,14 +550,16 @@ def tocar():
 parou = False
 # parar de tocar a música atual
 def parar():
-    global parou
+    global parou, musicas_after_id, energias_after_id
     parou = True
     if not dicionario_musicas:
         print("Dicionário vazio...")
         return
     
     reseta_textos()
-    reseta_timers()
+    if musicas_after_id and energias_after_id:
+        reseta_timers()
+    reseta_variaveis_musica()
 
     pygame.mixer.music.stop()
     # tira o selecionado da música que estava selecionada
@@ -479,18 +591,19 @@ def pausar():
 
 # toca a próxima música da Playlist da Caixa de Música
 def proxima():
-    global pausada, parou, nome_musica_tocando
+    global pausada, parou, nome_musica_tocando, caminho_musicas
     if parou:
         parou = False
     if pausada:
         pausada = False
 
-    reseta_timers()
-    reseta_textos()
-
     if not dicionario_musicas:
         print("Dicionário vazio...")
         return
+    
+    reseta_timers()
+    reseta_textos()
+    reseta_variaveis_musica()
     
     # pega, o formato tupla, a música que está tocando atualmente da playlist
     musica_atual = caixa_musica.curselection()
@@ -502,7 +615,21 @@ def proxima():
         proxima_musica = 0
     
     # carrega e toca a próxima música
-    nome_musica_tocando = caixa_musica.get(proxima_musica)
+    nova_musica_selecionada = caixa_musica.get(proxima_musica)
+
+    arquivo_musica = lista_nome_e_retorna_arq(nova_musica_selecionada)
+    if arquivo_musica == "0":
+        print("Música não encontrada")
+
+    caminho = caminho_musicas+nova_musica_selecionada
+    if not os.path.isdir(caminho):
+        if musicas_after_id != None and energias_after_id != None:
+            reseta_timers()
+        separate_audio(arquivo_musica)
+        reseta_textos()
+        reseta_variaveis_musica()
+        
+    nome_musica_tocando = nova_musica_selecionada
 
     arquivo_musica = lista_nome_e_retorna_arq(nome_musica_tocando)
 
@@ -526,12 +653,13 @@ def anterior():
     if pausada:
         pausada = False
 
-    reseta_timers()
-    reseta_textos()
-
     if not dicionario_musicas:
         print("Dicionário vazio...")
         return
+    
+    reseta_timers()
+    reseta_textos()
+    reseta_variaveis_musica()
     
     # pega, o formato tupla, a música que está tocando atualmente da playlist
     musica_atual = caixa_musica.curselection()
@@ -547,7 +675,22 @@ def anterior():
         musica_anterior = musica_atual[0] - 1
     
     # carrega e toca a música anterior
-    nome_musica_tocando = caixa_musica.get(musica_anterior)
+    nova_musica_selecionada = caixa_musica.get(musica_anterior)
+
+    arquivo_musica = lista_nome_e_retorna_arq(nova_musica_selecionada)
+    if arquivo_musica == "0":
+        print("Música não encontrada")
+        
+    caminho = caminho_musicas+nova_musica_selecionada
+    if not os.path.isdir(caminho):
+        if musicas_after_id != None and energias_after_id != None:
+            reseta_timers()
+        separate_audio(arquivo_musica)
+        reseta_textos()
+        reseta_variaveis_musica()
+        
+    nome_musica_tocando = nova_musica_selecionada
+
     arquivo_musica = lista_nome_e_retorna_arq(nome_musica_tocando)
 
     altera_musica_tocando(arquivo_musica)
@@ -564,10 +707,10 @@ def anterior():
 
 # Caculo do tempo das batidas
 def generate_beatTime():
-    global y, sr
-    tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
+    global y_musica, sr_musica
+    tempo, beat_frames = librosa.beat.beat_track(y=y_musica, sr=sr_musica)
     global beat_times
-    beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+    beat_times = librosa.frames_to_time(beat_frames, sr=sr_musica)
     global beat_time_filtrado, tempo_atual
     beat_time_filtrado = [time for time in beat_times if time >= tempo_atual]
 
@@ -585,6 +728,7 @@ def play_audio_with_beats():
 
     beat_time_filtrado = [time for time in beat_times if time >= tempo_atual]
     #print("Arrastou depois: " + beat_time_filtrado)
+
 
 
 ''' Primeiro Frame '''
@@ -612,7 +756,7 @@ frame1_nivel_energia_baterista = Frame(frame1_nivel_energia, bg="white")
 frame1_nivel_energia_baterista.pack(side=tk.TOP, fill=tk.BOTH, padx=5, pady=8)
 label = tk.Label(frame1_nivel_energia_baterista, text="Baterista", width=7, font='Helvetica 10 bold')
 label.pack(side=LEFT)
-canvas_baterista = Canvas(frame1_nivel_energia_baterista, height=30, bg="green")
+canvas_baterista = Canvas(frame1_nivel_energia_baterista, height=30, bg="blue")
 canvas_baterista.pack(side=LEFT)
 
 # Baixista
@@ -620,7 +764,7 @@ frame1_nivel_energia_baixista = Frame(frame1_nivel_energia, bg="white")
 frame1_nivel_energia_baixista.pack(side=TOP, fill=BOTH, padx=5, pady=8)
 label = tk.Label(frame1_nivel_energia_baixista, text="Baixista", width=7, font='Helvetica 10 bold')
 label.pack(side=LEFT)
-canvas_baixista = tk.Canvas(frame1_nivel_energia_baixista, height=30, bg="blue")
+canvas_baixista = tk.Canvas(frame1_nivel_energia_baixista, height=30, bg="green")
 canvas_baixista.pack(side=LEFT)
 
 # Pianista
@@ -628,11 +772,19 @@ frame1_nivel_energia_pianista = Frame(frame1_nivel_energia, bg="white")
 frame1_nivel_energia_pianista.pack(side=TOP, fill=BOTH, padx=5, pady=8)
 label = tk.Label(frame1_nivel_energia_pianista, text="Pianista", width=7, font='Helvetica 10 bold')
 label.pack(side=LEFT)
-canvas_pianista = tk.Canvas(frame1_nivel_energia_pianista, height=30, bg="orange")
+canvas_pianista = tk.Canvas(frame1_nivel_energia_pianista, height=30, bg="red")
 canvas_pianista.pack(side=LEFT)
 
+# Outro
+frame1_nivel_energia_outro = Frame(frame1_nivel_energia, bg="white")
+frame1_nivel_energia_outro.pack(side=TOP, fill=BOTH, padx=5, pady=8)
+label = tk.Label(frame1_nivel_energia_outro, text="Outro", width=7, font='Helvetica 10 bold')
+label.pack(side=LEFT)
+canvas_outro = tk.Canvas(frame1_nivel_energia_outro, height=30, bg="orange")
+canvas_outro.pack(side=LEFT)
+
 # Desenha as barras segundo as energias enviadas como parâmetro
-desenha_niveis_energia(200, 200, 200, 200)
+desenha_niveis_energia(200, 200, 200, 200, 200)
 
 # Label que representa as Batidas da Música
 frame1_batidas = Frame(frame1, bg="white", width=100, height=40)
@@ -642,18 +794,6 @@ label_batidas = Label(frame1_batidas, text="BATIDA", width=7, font='Helvetica 10
 label_batidas.pack(side=LEFT)
 label_status_batida = Label(frame1_batidas, text="")
 label_status_batida.pack(side=LEFT)
-
-# Frame temporário para exibir niveis de energia em formato numérico
-frame1_energias_numerico = Frame(frame1, bg="white", height=40)
-frame1_energias_numerico.pack(side=TOP, fill=BOTH, padx=5, pady=5)
-
-frame1_label_titulo_energia = Label(frame1_energias_numerico, text="Nivel Energia:", width=20, font='Helvetica 10 bold')
-frame1_label_titulo_energia.pack(side=LEFT)
-
-label_energia_numerico = Label(frame1_energias_numerico, text="", width=20, font='Helvetica 10 bold')
-label_energia_numerico.pack(side=LEFT)
-
-#exibe_status_batidas_sim()
 
 
 
@@ -671,8 +811,8 @@ frame2_baixo = Frame(frame2, bg="black")
 frame2_baixo.pack(side=TOP, fill=BOTH, expand=True)
 
 # Criar "Caixa de Música": a Label da Playlist, onde ficarão as músicas disponíveis
-caixa_musica = Listbox(frame2_cima, bg="white", fg="blue", width=50, selectbackground="black", selectforeground="green")
-caixa_musica.pack()
+caixa_musica = Listbox(frame2_cima, bg="white", fg="blue", width=40, selectbackground="black", selectforeground="green")
+caixa_musica.pack(side=TOP)
 
 # Criar controle deslizante (Slider) da posição da Música
 slider_posicao = ttk.Scale(frame2_cima, from_=0, to=100, orient=HORIZONTAL, value=0, command=deslizar_posicao, length=360)
@@ -710,11 +850,6 @@ frame2_baixo_tocando.pack(side=TOP, fill=BOTH, expand=True)
 
 texto_musica_tocando = Label(frame2_baixo_tocando, text="Música tocando:", bd=1, relief=GROOVE, anchor=W)
 texto_musica_tocando.pack(pady=10)
-
-###### adicionando o botão de separação ##########
-botao_separador = tk.Button(frame2_baixo, text = "Separar o áudio", command=separate_file)
-botao_separador.pack(pady = 10)
-
 
 
 ''' Terceiro Frame '''
