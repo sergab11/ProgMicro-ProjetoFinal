@@ -32,7 +32,21 @@
 
     - Segundo Menu:
         Será composto por duas opções: apagar UMA música (aquela que se
-        encontra selecionada) ou apagar TODAS as músicas.'''
+        encontra selecionada) ou apagar TODAS as músicas.
+        
+        
+    Escalas VALÊNCIA
+        - 0 < 0.25: sereno
+        - 0.25 < 0.5: calmo
+        - 0.5 < 0.75: padrao
+        - 0.75 < 1.0: animado
+
+    Escalas ENERGIA
+        - 0 < 0.333: baixa
+        - 0.333 < 0.666: media
+        - 0.666 < 0.85: alta
+        - 0.85 < 1.0: altissima
+'''
 
 
 from tkinter import *
@@ -48,9 +62,21 @@ from PIL import ImageTk, Image
 import subprocess
 import os
 import numpy as np
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
+from mutagen.easyid3 import EasyID3
+from mutagen.oggvorbis import OggVorbis
+from mutagen.wavpack import WavPack
 
 caminho_imagens = "Imagens/"
 caminho_musicas = "Musicas/"
+
+client_id = "b82a15a189224fde9bdebe87cb49e197"
+client_secret = "7d2d39e47aae41e180591b3384840316"
+
+# Create a Spotify client
+client_credentials_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
+spotify = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
 global pausada 
 pausada = False
@@ -97,7 +123,7 @@ musicas_after_id = None
 global energias_after_id
 energias_after_id = None
 
-# dicionario_musicas: {"caminho": str, "nome": str, "tipo": str}
+# dicionario_musicas: {"caminho": str, "artista": str, "nome": str, "tipo": str}
 dicionario_musicas = {}
 
 global tempo_atual
@@ -117,27 +143,36 @@ pygame.mixer.init()
 ''' Funções do Menu de Adição de Músicas '''
 # adiciona UMA música a Playlist
 def adiciona_musica():
+    global dicionario_musicas
+
     string_arquivo = filedialog.askopenfilename(title="Escolha uma música", filetypes=(("mp3 Files", "*.mp3"), ("wav Files", "*.wav"), ("ogg Files", "*.ogg"), ))
     
     string_caminho = ""
+    string_artista = ""
     string_nome = ""
     string_tipo = ""
 
-    string_caminho = string_arquivo[0:string_arquivo.rfind('/')+1]
-    # renomeando a variável música para não aparecer ao usuário o caminho de onde está a música e o .tipo da música
-    string_nome = string_arquivo.replace(string_caminho, "")
-    
-    if ".mp3" in string_nome:
-        string_nome = string_nome.replace(".mp3", "")
-        string_tipo = "mp3"
-    elif ".wav" in string_nome:
-        string_nome = string_nome.replace(".wav", "")
-        string_tipo = "wav"
-    elif ".ogg" in string_nome:
-        string_nome = string_nome.replace(".ogg", "")
-        string_tipo = "ogg"
+    string_caminho = string_arquivo
+    # Check the file extension to determine the audio file format
+    string_tipo = string_arquivo.split('.')[-1].lower()
 
-    nova_musica = [string_caminho, string_nome, string_tipo]
+    if string_tipo == 'mp3':
+        audio = EasyID3(string_arquivo)
+        string_nome = audio.get('title', [''])[0]
+        string_artista = audio.get('artist', [''])[0]
+
+    elif string_tipo == 'ogg':
+        audio = OggVorbis(string_arquivo)
+        string_nome = audio.get('title', [''])[0]
+        string_artista = audio.get('artist', [''])[0]
+
+    elif string_tipo == 'wav':
+        audio = WavPack(string_arquivo)
+        string_nome = audio.get('title', [''])[0]
+        string_artista = audio.get('artist', [''])[0]
+
+    nova_musica = [string_caminho, string_artista, string_nome, string_tipo]
+    print(nova_musica)
     dicionario_musicas[len(dicionario_musicas)] = nova_musica
     
     # adiciona música ao final da lista da caixa de música
@@ -151,24 +186,31 @@ def adiciona_varias_musicas():
     # adiciona músicas à Caixa de Música
     for musica in string_musicas:
         string_caminho = ""
+        string_artista = ""
         string_nome = ""
         string_tipo = ""
 
-        string_caminho = musica[0:musica.rfind('/')+1]
-        # renomeando a variável música para não aparecer ao usuário o caminho de onde está a música e o .tipo da música
-        string_nome = musica.replace(string_caminho, "")
-        
-        if ".mp3" in string_nome:
-            string_nome = string_nome.replace(".mp3", "")
-            string_tipo = "mp3"
-        elif ".wav" in string_nome:
-            string_nome = string_nome.replace(".wav", "")
-            string_tipo = "wav"
-        elif ".ogg" in string_nome:
-            string_nome = string_nome.replace(".ogg", "")
-            string_tipo = "ogg"
+        string_caminho = musica
+        # Check the file extension to determine the audio file format
+        string_tipo = musica.split('.')[-1].lower()
 
-        nova_musica = [string_caminho, string_nome, string_tipo]
+        if string_tipo == 'mp3':
+            audio = EasyID3(musica)
+            string_nome = audio.get('title', [''])[0]
+            string_artista = audio.get('artist', [''])[0]
+
+        elif string_tipo == 'ogg':
+            audio = OggVorbis(musica)
+            string_nome = audio.get('title', [''])[0]
+            string_artista = audio.get('artist', [''])[0]
+
+        elif string_tipo == 'wav':
+            audio = WavPack(musica)
+            string_nome = audio.get('title', [''])[0]
+            string_artista = audio.get('artist', [''])[0]
+
+        nova_musica = [string_caminho, string_artista, string_nome, string_tipo]
+        print(nova_musica)
         dicionario_musicas[len(dicionario_musicas)] = nova_musica
         
         # adiciona música ao final da lista da caixa de música
@@ -208,13 +250,13 @@ def redimensiona_imagem(nome, num_pixels):
 # passado no parâmetro
 def retorna_posicao_dicionario(nome_arq):
     for chave in dicionario_musicas:
-        if dicionario_musicas[chave][1] == nome_arq:
+        if dicionario_musicas[chave][2] == nome_arq:
             return chave
         
     return -1
 
 # Função que procura pelo arquivo pelo nome no dicionario de músicas 
-# e retorna string com o arquivo (caminho + nome + tipo)
+# e retorna string com o caminho do arquivo
 def lista_nome_e_retorna_arq(nome_arquivo):
     chave = retorna_posicao_dicionario(nome_arquivo)
     if chave == -1:
@@ -222,9 +264,16 @@ def lista_nome_e_retorna_arq(nome_arquivo):
         return "0"
     
     caminho = dicionario_musicas[chave][0]
-    nome = dicionario_musicas[chave][1]
-    tipo = dicionario_musicas[chave][2]
-    return caminho+nome+"."+tipo
+    return caminho
+
+def lista_nome_e_retorna_artista(nome_arquivo):
+    chave = retorna_posicao_dicionario(nome_arquivo)
+    if chave == -1:
+        print('Arquivo não encontrado no Dicionário')
+        return "0"
+    
+    artista = dicionario_musicas[chave][1]
+    return artista
 
 # Função que define um Timer recorrente de 0.1s e
 # que atualiza a Barra de Status e o Slider com a posição atual da música
@@ -314,28 +363,73 @@ def reseta_variaveis_musica():
     y_outro = 0
     sr_outro = 0
 
+def procura_musica_Spotify():
+    global nome_musica_tocando
+    
+    artista = lista_nome_e_retorna_artista(nome_musica_tocando)
+    pesquisa = nome_musica_tocando+" "+artista
+
+    resultado_pesquisa = spotify.search(q=pesquisa, type='track')
+    audio_features = []
+    id_musica = ""
+    achou = False
+
+    for faixa in resultado_pesquisa['tracks']['items']:
+        id_musica = faixa['id']
+        nome_artista = faixa['artists'][0]['name']
+        nome_musica = faixa['name']
+        audio_features = spotify.audio_features([id_musica])[0]
+
+        if nome_artista == artista:
+            achou = True
+            break
+
+    if not achou:
+        print("Música não encontrada...")
+    else:
+        print(f"Nome: {nome_musica}")
+        print(f"Artista: {artista}")
+
+        if audio_features['energy'] <= 0.333:
+            print(f"Energia: {audio_features['energy']} (baixa)")
+        elif audio_features['energy'] <= 0.666:
+            print(f"Energia: {audio_features['energy']} (media)")
+        elif audio_features['energy'] <= 0.85:
+            print(f"Energia: {audio_features['energy']} (alta)")
+        else:
+            print(f"Energia: {audio_features['energy']} (altissima)")
+
+        if audio_features['valence'] <= 0.25:
+            print(f"Valência: {audio_features['valence']} (sereno)")
+        elif audio_features['valence'] <= 0.5:
+            print(f"Valência: {audio_features['valence']} (calmo)")
+        elif audio_features['valence'] <= 0.75:
+            print(f"Valência: {audio_features['valence']} (padrao)")
+        else:
+            print(f"Valência: {audio_features['valence']} (animado)")
+
  # carrega, obtem o tamanho e formata a música com Librosa
 def altera_musica_tocando(arquivo):
-    global duracao_musica_tocando, nome_musica_tocando, arquivo_musica_tocando
+    global duracao_musica_tocando, nome_musica_tocando, arquivo_musica_tocando, caminho_musicas
     global y_baixo, sr_baixo, y_bateria, sr_bateria, y_piano, sr_piano, y_vocal, sr_vocal, y_musica, sr_musica, y_outro, sr_outro
 
     duracao_musica_tocando = librosa.get_duration(filename=arquivo)
     texto_musica_tocando.config(text=f'Música tocando: {nome_musica_tocando}')
     arquivo_musica_tocando = librosa.load(arquivo)
 
-    caminho = caminho_musicas+nome_musica_tocando+"/vocals.wav"
+    caminho = caminho_musicas+arquivo[arquivo.rfind('/')+1:arquivo.rfind('.')]+"/vocals.wav"
     y_vocal, sr_vocal = librosa.load(caminho)
 
-    caminho = caminho_musicas+nome_musica_tocando+"/drums.wav"
+    caminho = caminho_musicas+arquivo[arquivo.rfind('/')+1:arquivo.rfind('.')]+"/drums.wav"
     y_bateria, sr_bateria = librosa.load(caminho)
 
-    caminho = caminho_musicas+nome_musica_tocando+"/bass.wav"
+    caminho = caminho_musicas+arquivo[arquivo.rfind('/')+1:arquivo.rfind('.')]+"/bass.wav"
     y_baixo, sr_baixo = librosa.load(caminho)
 
-    caminho = caminho_musicas+nome_musica_tocando+"/piano.wav"
+    caminho = caminho_musicas+arquivo[arquivo.rfind('/')+1:arquivo.rfind('.')]+"/piano.wav"
     y_piano, sr_piano = librosa.load(caminho)
 
-    caminho = caminho_musicas+nome_musica_tocando+"/other.wav"
+    caminho = caminho_musicas+arquivo[arquivo.rfind('/')+1:arquivo.rfind('.')]+"/other.wav"
     y_outro, sr_outro = librosa.load(caminho)
 
     for elem in ["baixo", "bateria", "piano", "vocal", "outro"]:
@@ -483,8 +577,8 @@ def exibe_status_batidas_nao():
 ''' Função para separação do arquivo '''
 
 def separate_audio(arquivo):
-    output_dir = "Musicas"
-    cmd = f"spleeter separate -p spleeter:5stems -o {output_dir} {arquivo}"
+    global caminho_musicas
+    cmd = f"spleeter separate -p spleeter:5stems -o {caminho_musicas} {arquivo}"
     subprocess.run(cmd, shell=True)
 
 
@@ -523,15 +617,15 @@ def tocar():
         reseta_timers()
         reseta_textos()
         reseta_variaveis_musica()
-        nome_musica_tocando = nova_musica_selecionada
-    else:
-        nome_musica_tocando = caixa_musica.get(ACTIVE)
+    
+    nome_musica_tocando = nova_musica_selecionada
+    procura_musica_Spotify()
 
     arquivo_musica = lista_nome_e_retorna_arq(nome_musica_tocando)
     if arquivo_musica == "0":
         print("Música não encontrada")
 
-    caminho = caminho_musicas+nome_musica_tocando
+    caminho = caminho_musicas+arquivo_musica[arquivo_musica.rfind('/')+1:arquivo_musica.rfind('.')]
     if not os.path.isdir(caminho):
         if musicas_after_id != None and energias_after_id != None:
             reseta_timers()
@@ -620,8 +714,8 @@ def proxima():
     arquivo_musica = lista_nome_e_retorna_arq(nova_musica_selecionada)
     if arquivo_musica == "0":
         print("Música não encontrada")
-
-    caminho = caminho_musicas+nova_musica_selecionada
+    
+    caminho = caminho_musicas+arquivo_musica[arquivo_musica.rfind('/')+1:arquivo_musica.rfind('.')]
     if not os.path.isdir(caminho):
         if musicas_after_id != None and energias_after_id != None:
             reseta_timers()
@@ -632,6 +726,7 @@ def proxima():
     nome_musica_tocando = nova_musica_selecionada
 
     arquivo_musica = lista_nome_e_retorna_arq(nome_musica_tocando)
+    procura_musica_Spotify()
 
     altera_musica_tocando(arquivo_musica)
     atualiza_posicao_atual_musica()
@@ -681,7 +776,7 @@ def anterior():
     if arquivo_musica == "0":
         print("Música não encontrada")
         
-    caminho = caminho_musicas+nova_musica_selecionada
+    caminho = caminho_musicas+arquivo_musica[arquivo_musica.rfind('/')+1:arquivo_musica.rfind('.')]
     if not os.path.isdir(caminho):
         if musicas_after_id != None and energias_after_id != None:
             reseta_timers()
@@ -692,6 +787,7 @@ def anterior():
     nome_musica_tocando = nova_musica_selecionada
 
     arquivo_musica = lista_nome_e_retorna_arq(nome_musica_tocando)
+    procura_musica_Spotify()
 
     altera_musica_tocando(arquivo_musica)
     atualiza_posicao_atual_musica()
