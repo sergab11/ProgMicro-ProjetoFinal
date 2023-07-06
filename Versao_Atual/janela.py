@@ -42,7 +42,7 @@
         - 0.75 < 1.0: animado
 
     Escalas ENERGIA
-        - 0 < 0.333: baixa
+        - 0 < 0.333: baixa 
         - 0.333 < 0.666: media
         - 0.666 < 0.85: alta
         - 0.85 < 1.0: altissima
@@ -67,9 +67,13 @@ from spotipy.oauth2 import SpotifyClientCredentials
 from mutagen.easyid3 import EasyID3
 from mutagen.oggvorbis import OggVorbis
 from mutagen.wavpack import WavPack
+from serial import Serial
+import requests
 
-caminho_imagens = "Imagens/"
-caminho_musicas = "Musicas/"
+meu_serial = Serial("COM3", baudrate=115200, timeout=1.0)
+
+caminho_imagens = "C:/Users/dFuture/Desktop/PUC/Projeto_Micro/Imagens/"
+caminho_musicas = "C:/Users/dFuture/Desktop/PUC/Projeto_Micro/Musicas/"
 
 client_id = "b82a15a189224fde9bdebe87cb49e197"
 client_secret = "7d2d39e47aae41e180591b3384840316"
@@ -78,13 +82,17 @@ client_secret = "7d2d39e47aae41e180591b3384840316"
 client_credentials_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
 spotify = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
-global pausada 
+global pausada, song_id, letra_atual 
 pausada = False
+song_id = 0
+letra_atual = ""
 
 global duracao_musica_tocando, nome_musica_tocando, arquivo_musica_tocando
 duracao_musica_tocando = 0
 nome_musica_tocando = ""
 arquivo_musica_tocando = ""
+global ultimo_indice_batida
+ultimo_indice_batida = 0
 
 global energia_maxima_baixo, energia_maxima_bateria, energia_maxima_piano, energia_maxima_vocal, energia_maxima_outro
 energia_maxima_baixo = np.zeros(1)
@@ -93,24 +101,30 @@ energia_maxima_piano = np.zeros(1)
 energia_maxima_vocal = np.zeros(1)
 energia_maxima_outro = np.zeros(1)
 
+global nivel_energia_atual_baixo, nivel_energia_atual_bateria, nivel_energia_atual_piano, nivel_energia_atual_vocal, nivel_energia_atual_outro
+nivel_energia_atual_baixo = 0
+nivel_energia_atual_bateria = 0
+nivel_energia_atual_piano = 0
+nivel_energia_atual_vocal = 0
+nivel_energia_atual_outro = 0
+
 global y_musica, sr_musica, y_vocal, sr_vocal, y_bateria, sr_bateria, y_baixo, sr_baixo, y_piano, sr_piano, y_outro, sr_outro
-y_musica = 0
-sr_musica = 0
+y_musica, sr_musica = 0, 0
 
-y_vocal = 0
-sr_vocal = 0
+y_vocal, sr_vocal = 0, 0
 
-y_bateria = 0
-sr_bateria = 0
+y_bateria, sr_bateria = 0, 0
 
-y_baixo = 0
-sr_baixo = 0
+y_baixo, sr_baixo = 0, 0
 
-y_piano = 0
-sr_piano = 0
+y_piano, sr_piano = 0, 0
 
-y_outro = 0
-sr_outro = 0
+y_outro, sr_outro = 0, 0
+
+global instantes_batidas, instantes_bateria, instantes_bateria_filtrado
+instantes_batidas = []
+instantes_bateria = []
+instantes_bateria_filtrado = []
 
 global parou
 parou = False
@@ -135,6 +149,7 @@ beat_time_filtrado = 0
 root = Tk()
 root.title('Micro B5')
 root.geometry("900x400")
+
 
 '''Inicializando Pygame Mixer'''
 pygame.mixer.init()
@@ -172,7 +187,6 @@ def adiciona_musica():
         string_artista = audio.get('artist', [''])[0]
 
     nova_musica = [string_caminho, string_artista, string_nome, string_tipo]
-    print(nova_musica)
     dicionario_musicas[len(dicionario_musicas)] = nova_musica
     
     # adiciona música ao final da lista da caixa de música
@@ -246,7 +260,7 @@ def redimensiona_imagem(nome, num_pixels):
 
     return imagem_nova
 
-# Função que retorna a posição de um arquivo pelo nome
+# Função que retorna a posição de um arquivo pelo nome da música
 # passado no parâmetro
 def retorna_posicao_dicionario(nome_arq):
     for chave in dicionario_musicas:
@@ -274,6 +288,43 @@ def lista_nome_e_retorna_artista(nome_arquivo):
     
     artista = dicionario_musicas[chave][1]
     return artista
+
+# função que escreve texto na serial
+def escreve_no_serial(texto):
+    escreve = texto + "\n"
+    meu_serial.write(escreve.encode("UTF-8"))
+
+
+# função que extrai as batidas da música que foi selecionada para tocar
+def extrai_batidas(arquivo):
+    # Load the audio file
+    y, sr = librosa.load(arquivo)
+
+    # Calculate the beat times
+    tempo, frames_batida = librosa.beat.beat_track(y=y, sr=sr)
+    batidas = librosa.frames_to_time(frames_batida, sr=sr)
+
+    # Store beat times in the global list
+    return list(batidas)
+
+def tem_bateria(posicao):
+    global instantes_bateria, ultimo_indice_batida
+
+    if posicao > instantes_bateria[ultimo_indice_batida]:
+        ultimo_indice_batida += 1
+        return True
+    
+    return False
+
+    # Check if there's a beat at the specified position
+    #return any(abs(beat_time - posicao) < 0.01 for beat_time in instantes_bateria_filtrado)
+
+# função que verifica se há batida em um instante passado como parâmetro
+def tem_batida(posicao):
+    global instantes_batidas
+
+    # Check if there's a beat at the specified position
+    return any(abs(beat_time - posicao) < 0.05 for beat_time in instantes_batidas)
 
 # Função que define um Timer recorrente de 0.1s e
 # que atualiza a Barra de Status e o Slider com a posição atual da música
@@ -307,16 +358,35 @@ def atualiza_posicao_atual_musica():
         proximo_segundo = int(slider_posicao.get()) + 1
         slider_posicao.config(value=proximo_segundo)
 
-    play_audio_with_beats()
 
     # timer recorrente do TkInter
     musicas_after_id = barra_status.after(1000, atualiza_posicao_atual_musica)
 
 # Função que atualiza as barras com os Níveis de Energia a cada 50 milissegundos
 def atualiza_barras_nivel_energia():
-    global energias_after_id
+    global energias_after_id, nivel_energia_atual_vocal, nivel_energia_atual_baixo, instantes_batidas, instantes_bateria_filtrado
     
     desenha_nivel_energia_integrantes()
+
+    texto_serial = "voz "+str(nivel_energia_atual_vocal)
+    escreve_no_serial(texto_serial)
+    
+    if nivel_energia_atual_baixo != 0:
+        escreve_no_serial("baixo")
+
+    posicao_atual = pygame.mixer.music.get_pos()/1000
+    if tem_bateria(posicao_atual):
+        exibe_status_bateria_sim()
+        escreve_no_serial("batera")
+    else:
+        exibe_status_bateria_nao()
+
+    if tem_batida(posicao_atual):
+        exibe_status_batidas_sim()
+        escreve_no_serial("batida")
+    else:
+        exibe_status_batidas_nao() 
+
     energias_after_id = frame1_nivel_energia.after(50, atualiza_barras_nivel_energia)
 
 
@@ -331,6 +401,7 @@ def reseta_textos():
     texto_musica_tocando.config(text='')
     desenha_niveis_energia(0, 0, 0, 0, 0)
     label_status_batida.config(text='')
+    label_status_batida_bateria.config(text='')
 
 # Função que reseta os timers gerados pelo método after
 def reseta_timers():
@@ -352,16 +423,12 @@ def reseta_variaveis_musica():
     energia_maxima_vocal = np.zeros(1)
     energia_maxima_outro = np.zeros(1)
 
-    y_vocal = 0
-    sr_vocal = 0
-    y_bateria = 0
-    sr_bateria = 0
-    y_baixo = 0
-    sr_baixo = 0
-    y_piano = 0
-    sr_piano = 0
-    y_outro = 0
-    sr_outro = 0
+    y_vocal, sr_vocal = 0, 0
+    y_bateria, sr_bateria = 0, 0
+    y_baixo, sr_baixo = 0, 0
+    y_piano, sr_piano = 0, 0
+    y_outro, sr_outro = 0, 0
+
 
 def procura_musica_Spotify():
     global nome_musica_tocando
@@ -392,27 +459,127 @@ def procura_musica_Spotify():
 
         if audio_features['energy'] <= 0.333:
             print(f"Energia: {audio_features['energy']} (baixa)")
+            escreve_no_serial("baixa")
         elif audio_features['energy'] <= 0.666:
             print(f"Energia: {audio_features['energy']} (media)")
+            escreve_no_serial("media")
         elif audio_features['energy'] <= 0.85:
             print(f"Energia: {audio_features['energy']} (alta)")
+            escreve_no_serial("alta")
         else:
             print(f"Energia: {audio_features['energy']} (altissima)")
+            escreve_no_serial("altissima")
 
         if audio_features['valence'] <= 0.25:
             print(f"Valência: {audio_features['valence']} (sereno)")
+            escreve_no_serial("sereno")
         elif audio_features['valence'] <= 0.5:
             print(f"Valência: {audio_features['valence']} (calmo)")
+            escreve_no_serial("calmo")
         elif audio_features['valence'] <= 0.75:
             print(f"Valência: {audio_features['valence']} (padrao)")
+            escreve_no_serial("padrao")
         else:
             print(f"Valência: {audio_features['valence']} (animado)")
+            escreve_no_serial("animado")
+
+def procura_musica_Xianqiao():
+    global nome_musica_tocando, duracao_musica_tocando, song_id
+    artista = lista_nome_e_retorna_artista(nome_musica_tocando)
+    
+    search_url = f"https://music.xianqiao.wang/neteaseapiv2/search?type=1&keywords={nome_musica_tocando}"
+    response = requests.get(search_url)
+    
+    if response.status_code == 200:
+        search_results = response.json()
+        songs = search_results["result"]["songs"]
+        #print("duracao1:", int(duracao_musica_tocando))
+        #print("artista:", artista)
+        
+        exact_match = False  # Flag para verificar se há uma correspondência exata
+        
+        for song in songs:
+            song_duration_sec = song.get("duration", 0) // 1000 
+            
+            if song_duration_sec == int(duracao_musica_tocando):
+                #print("duracao2:", song_duration_sec)
+                #print("id:", song["id"])
+                song_id = song["id"]
+                exact_match = True  # Altera a flag para verdadeiro
+                break  # Sai do loop, pois encontrou uma correspondência exata
+        
+        if not exact_match:  # Se nenhuma correspondência exata foi encontrada
+            tolerance = 1  # Definir a tolerância de duração (em segundos)
+            
+            for song in songs:
+                if abs(song.get("duration", 0) // 1000 - int(duracao_musica_tocando)) <= tolerance:
+                    #print("duracao2:", song.get("duration", 0) // 1000)
+                    #print("id:", song["id"])
+                    song_id = song["id"]
+                    break  # Sai do loop, pois encontrou uma correspondência dentro da tolerância
+        
+        if exact_match or song_id:
+            return song_id
+    
+    return None  # Retorna None se nenhum ID de música for encontrado
+
+def get_lyrics():
+    global lyrics, song_id
+
+    lyrics = None
+    #print(song_id)
+    url = f"https://music.xianqiao.wang/neteaseapiv2/lyric?id={song_id}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        lyrics_json = response.json()
+        lyric_lines = lyrics_json["lrc"]["lyric"].split("\n")
+        lyrics = []
+        for line in lyric_lines:
+            line = line.strip()
+            if "[" in line and "]" in line:
+                time_start = line.index("[") + 1
+                time_end = line.index("]")
+                time = line[time_start:time_end]
+                lyric = line[time_end + 1:].strip()
+                lyrics.append((time, lyric))
+        #print(lyrics)        
+        return lyrics
+    else:
+        return None
+    
+# Função para calcular o atraso necessário com base no tempo no formato [mm:ss.SS]
+def get_time_delay(time_str):
+    minutes, seconds = time_str.split(":")
+    total_seconds = int(minutes) * 60 + float(seconds)
+    return total_seconds
+
+def exibir_letras(lyrics, index=0):
+    global letra_atual, pausada
+    letra_anterior = ""
+    for line in lyrics:
+        time_str, lyric = line
+        current_time = pygame.mixer.music.get_pos() / 1000.0
+        lyric_time = get_time_delay(time_str)
+        if current_time >= lyric_time:
+            letra_anterior = f"{lyric}\n"
+            
+    if letra_anterior != letra_atual:
+        letra_atual=letra_anterior
+
+        letra_tratada = letra_anterior.replace("’", "'") 
+        letra_tratada = "letra " + letra_tratada
+        escreve_no_serial(letra_tratada)  # Envia o texto para o Arduino
+        print(letra_tratada)
+        
+    if not pausada:
+        root.after(50, exibir_letras, lyrics)  # Chama a função novamente após 50ms
+
 
  # carrega, obtem o tamanho e formata a música com Librosa
 def altera_musica_tocando(arquivo):
-    global duracao_musica_tocando, nome_musica_tocando, arquivo_musica_tocando, caminho_musicas
+    global duracao_musica_tocando, nome_musica_tocando, arquivo_musica_tocando, caminho_musicas, instantes_batidas, instantes_bateria,instantes_bateria_filtrado
     global y_baixo, sr_baixo, y_bateria, sr_bateria, y_piano, sr_piano, y_vocal, sr_vocal, y_musica, sr_musica, y_outro, sr_outro
-
+    
     duracao_musica_tocando = librosa.get_duration(filename=arquivo)
     texto_musica_tocando.config(text=f'Música tocando: {nome_musica_tocando}')
     arquivo_musica_tocando = librosa.load(arquivo)
@@ -420,8 +587,8 @@ def altera_musica_tocando(arquivo):
     caminho = caminho_musicas+arquivo[arquivo.rfind('/')+1:arquivo.rfind('.')]+"/vocals.wav"
     y_vocal, sr_vocal = librosa.load(caminho)
 
-    caminho = caminho_musicas+arquivo[arquivo.rfind('/')+1:arquivo.rfind('.')]+"/drums.wav"
-    y_bateria, sr_bateria = librosa.load(caminho)
+    caminho_bateria = caminho_musicas+arquivo[arquivo.rfind('/')+1:arquivo.rfind('.')]+"/drums.wav"
+    y_bateria, sr_bateria = librosa.load(caminho_bateria)
 
     caminho = caminho_musicas+arquivo[arquivo.rfind('/')+1:arquivo.rfind('.')]+"/bass.wav"
     y_baixo, sr_baixo = librosa.load(caminho)
@@ -432,13 +599,21 @@ def altera_musica_tocando(arquivo):
     caminho = caminho_musicas+arquivo[arquivo.rfind('/')+1:arquivo.rfind('.')]+"/other.wav"
     y_outro, sr_outro = librosa.load(caminho)
 
+    if instantes_batidas != []:
+        instantes_batidas.clear()
+        instantes_bateria.clear()
+
+    instantes_batidas = extrai_batidas(arquivo)
+    instantes_bateria = extrai_batidas(caminho_bateria)
+    instantes_bateria_filtrado = instantes_bateria
+
+
     for elem in ["baixo", "bateria", "piano", "vocal", "outro"]:
         calcula_energia_maxima_integrante(elem)
     
     # Load the audio file with librosa
     y_musica, sr_musica = librosa.load(arquivo)
 
-    generate_beatTime()
 
 # Função que desenha as barras dos níveis de energia de cada integrante da banda.
 # Recebe como parâmteros 4 números de 0 a 200 para representar a energia
@@ -551,19 +726,24 @@ def calcula_nivel_energia_integrante(tipo, posicao):
 # Desenha nível de energia dos integrantes da Banda
 def desenha_nivel_energia_integrantes():
     global energias_after_id, duracao_musica_tocando
-
-    barras_energia = []
+    global nivel_energia_atual_baixo, nivel_energia_atual_bateria, nivel_energia_atual_piano, nivel_energia_atual_vocal, nivel_energia_atual_outro
 
     posicao_atual = pygame.mixer.music.get_pos()/1000
     if posicao_atual == int(duracao_musica_tocando):
         frame1_nivel_energia.after_cancel(energias_after_id)
         return
     
-    for elem in ["baixo", "bateria", "piano", "vocal", "outro"]:
-        barras_energia.append(calcula_nivel_energia_integrante(elem, posicao_atual))
+    nivel_energia_atual_baixo = calcula_nivel_energia_integrante("baixo", posicao_atual)
+    nivel_energia_atual_bateria = calcula_nivel_energia_integrante("bateria", posicao_atual)
+    nivel_energia_atual_piano = calcula_nivel_energia_integrante("piano", posicao_atual)
+    nivel_energia_atual_vocal = calcula_nivel_energia_integrante("vocal", posicao_atual)
+    nivel_energia_atual_outro = calcula_nivel_energia_integrante("outro", posicao_atual)
 
-    desenha_niveis_energia(barras_energia[0], barras_energia[1], barras_energia[2], barras_energia[3], barras_energia[4])
-
+    desenha_niveis_energia(nivel_energia_atual_baixo, 
+                           nivel_energia_atual_bateria, 
+                           nivel_energia_atual_piano, 
+                           nivel_energia_atual_vocal, 
+                           nivel_energia_atual_outro)
 
 # Função que seta a Label de Status das Batidas para SIM
 def exibe_status_batidas_sim():
@@ -572,6 +752,14 @@ def exibe_status_batidas_sim():
 # Função que seta a Label de Status das Batidas para NÃO
 def exibe_status_batidas_nao():
     label_status_batida.config(text="NÃO", fg='red')
+
+# Função que seta a Label de Status da Bateria para SIM
+def exibe_status_bateria_sim():
+    label_status_batida_bateria.config(text="SIM", fg='green')
+
+# Função que seta a Label de Status da Bateria para NÃO
+def exibe_status_bateria_nao():
+    label_status_batida_bateria.config(text="NÃO", fg='red')
 
 
 ''' Função para separação do arquivo '''
@@ -603,7 +791,8 @@ def deslizar_volume(x):
 ''' Funções de Comando dos Botões '''
 # toca música selecionada na Caixa de Música
 def tocar():
-    global parou, pausada, nome_musica_tocando, musicas_after_id, energias_after_id, caminho_musicas
+    global parou, pausada, nome_musica_tocando
+    global musicas_after_id, energias_after_id, caminho_musicas
 
     parou = False
     pausada = False
@@ -637,9 +826,22 @@ def tocar():
     altera_musica_tocando(arquivo_musica)
     atualiza_posicao_atual_musica()
     atualiza_barras_nivel_energia()
+
+    global ultimo_indice_batida
+    ultimo_indice_batida = 0
     
     pygame.mixer.music.load(arquivo_musica)
     pygame.mixer.music.play(loops=0)
+
+    achou = procura_musica_Xianqiao()
+    if achou != None:
+        letras = get_lyrics()
+        if letras:
+            exibir_letras(letras)
+    else:
+        print("Não achou a música!")
+
+
 
 parou = False
 # parar de tocar a música atual
@@ -727,6 +929,7 @@ def proxima():
 
     arquivo_musica = lista_nome_e_retorna_arq(nome_musica_tocando)
     procura_musica_Spotify()
+    procura_musica_Xianqiao()
 
     altera_musica_tocando(arquivo_musica)
     atualiza_posicao_atual_musica()
@@ -788,6 +991,7 @@ def anterior():
 
     arquivo_musica = lista_nome_e_retorna_arq(nome_musica_tocando)
     procura_musica_Spotify()
+    procura_musica_Xianqiao()
 
     altera_musica_tocando(arquivo_musica)
     atualiza_posicao_atual_musica()
@@ -800,31 +1004,6 @@ def anterior():
     caixa_musica.selection_clear(0, END)
     caixa_musica.activate(musica_anterior)
     caixa_musica.selection_set(musica_anterior, last=None)
-
-# Caculo do tempo das batidas
-def generate_beatTime():
-    global y_musica, sr_musica
-    tempo, beat_frames = librosa.beat.beat_track(y=y_musica, sr=sr_musica)
-    global beat_times
-    beat_times = librosa.frames_to_time(beat_frames, sr=sr_musica)
-    global beat_time_filtrado, tempo_atual
-    beat_time_filtrado = [time for time in beat_times if time >= tempo_atual]
-
-
-def play_audio_with_beats():
-    global beat_time_filtrado, tempo_atual
-
-    for beat_time in beat_time_filtrado:
-        if tempo_atual > beat_time:
-            #print("Tempo: " + str(tempo_atual) + " Beat_time: " + str(beat_time))
-            print("batida")
-            break
-        else:
-            break
-
-    beat_time_filtrado = [time for time in beat_times if time >= tempo_atual]
-    #print("Arrastou depois: " + beat_time_filtrado)
-
 
 
 ''' Primeiro Frame '''
@@ -890,6 +1069,15 @@ label_batidas = Label(frame1_batidas, text="BATIDA", width=7, font='Helvetica 10
 label_batidas.pack(side=LEFT)
 label_status_batida = Label(frame1_batidas, text="")
 label_status_batida.pack(side=LEFT)
+
+# Label que representa as Batidas da Bateria
+frame1_batidas_bateria = Frame(frame1, bg="white", width=100, height=40)
+frame1_batidas_bateria.pack(side=TOP, fill=BOTH, padx=5, pady=15)
+
+label_batidas_bateria = Label(frame1_batidas_bateria, text="BATERIA", width=7, font='Helvetica 10 bold')
+label_batidas_bateria.pack(side=LEFT)
+label_status_batida_bateria = Label(frame1_batidas_bateria, text="")
+label_status_batida_bateria.pack(side=LEFT)
 
 
 
@@ -985,7 +1173,6 @@ menu_remover_musica.add_command(label="Deletar UMA música", command=deletar_mus
 
 # Criar opção de "deletar todas as músicas" ao Menu de Deleção de Músicas 
 menu_remover_musica.add_command(label="Deletar TODAS as músicas", command=deletar_todas_musicas, font=('Helvetica', 14))
-
 
 
 root.mainloop()
